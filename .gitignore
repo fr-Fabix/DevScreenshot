@@ -1,0 +1,8 @@
+# macOS
+.DS_Store
+
+# Build artifacts
+*.app/
+*.iconset/
+build/
+DerivedData/
