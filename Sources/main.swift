@@ -5,6 +5,16 @@ import ServiceManagement
 /// Pixel sizes accepted by App Store Connect for Mac apps — all 16:10.
 let PRESET_SIZES: [(w: Int, h: Int)] = [(2560, 1600), (2880, 1800), (1440, 900), (1280, 800)]
 
+/// App Store screenshot pixel sizes for iPhone/iPad (both orientations) — used to flag simulator shots.
+let SIM_VALID_SIZES: Set<String> = [
+    "1242x2688", "2688x1242",   // 6.5"  (iPhone 11 Pro Max / Xs Max)
+    "1284x2778", "2778x1284",   // 6.7"  (iPhone 12–14 Pro Max)
+    "1290x2796", "2796x1290",   // 6.7"/6.9" (iPhone 15/16 Pro Max)
+    "1320x2868", "2868x1320",   // 6.9"  (iPhone 16/17 Pro Max)
+    "2048x2732", "2732x2048",   // iPad 12.9"
+    "2064x2752", "2752x2064",   // iPad 13"
+]
+
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private var statusItem: NSStatusItem!
@@ -80,6 +90,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 it.image = img
             }
             menu.addItem(it)
+        }
+
+        let sims = bootedSimulators()
+        if !sims.isEmpty {
+            menu.addItem(.separator())
+            header(menu, "Capture iOS Simulator")
+            for sim in sims {
+                let it = action(sim.name, #selector(shootSimulator(_:)))
+                it.representedObject = sim.udid
+                menu.addItem(it)
+            }
         }
 
         menu.addItem(.separator())
@@ -285,6 +306,55 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    // MARK: - iOS Simulator capture
+
+    /// Booted simulators via `simctl list devices booted -j`.
+    private func bootedSimulators() -> [(name: String, udid: String)] {
+        let out = shell("/usr/bin/xcrun", ["simctl", "list", "devices", "booted", "-j"])
+        guard let data = out.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let runtimes = json["devices"] as? [String: Any] else { return [] }
+        var result: [(name: String, udid: String)] = []
+        for (_, list) in runtimes {
+            guard let devices = list as? [[String: Any]] else { continue }
+            for d in devices where (d["state"] as? String) == "Booted" {
+                if let name = d["name"] as? String, let udid = d["udid"] as? String {
+                    result.append((name, udid))
+                }
+            }
+        }
+        return result.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    @objc private func shootSimulator(_ sender: NSMenuItem) {
+        guard let udid = sender.representedObject as? String else { return }
+        let name = sender.title
+        let stamp = DateFormatter(); stamp.dateFormat = "yyyy-MM-dd_HH.mm.ss"
+        let safe = name.replacingOccurrences(of: " ", with: "_")
+        let path = "\(outDir)/\(safe)_\(stamp.string(from: Date())).png"
+        try? FileManager.default.createDirectory(atPath: outDir, withIntermediateDirectories: true)
+
+        // simctl captures at the device's native pixel resolution — already App-Store-exact, no resize.
+        let result = shell("/usr/bin/xcrun", ["simctl", "io", udid, "screenshot", path])
+        guard FileManager.default.fileExists(atPath: path) else {
+            alert("Simulator capture failed", result.isEmpty ? "Could not capture \(name)." : result)
+            return
+        }
+
+        let pw = pixelDimension(path, "pixelWidth")
+        let ph = pixelDimension(path, "pixelHeight")
+        let valid = SIM_VALID_SIZES.contains("\(pw)x\(ph)")
+
+        if copyToClipboard, let img = NSImage(contentsOfFile: path) {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.writeObjects([img])
+        }
+        notify("\(safe) — \(pw)×\(ph)\(valid ? " ✓ App Store" : " — not an App Store size")")
+        if revealInFinder {
+            NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+        }
+    }
+
     // MARK: - Accessibility helpers
 
     private func mainWindow(of axApp: AXUIElement) -> AXUIElement? {
@@ -329,15 +399,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return AXIsProcessTrustedWithOptions(options)
     }
 
+    private func pixelDimension(_ path: String, _ key: String) -> Int {
+        let out = shell("/usr/bin/sips", ["-g", key, path])
+        let last = out.split { $0 == " " || $0 == "\n" }.last.map(String.init) ?? ""
+        return Int(last) ?? 0
+    }
+
     /// Guarantee exact pixel dimensions without distortion: pad if smaller, crop if larger.
     private func ensureExactSize(_ path: String) {
-        func dimension(_ key: String) -> Int {
-            let out = shell("/usr/bin/sips", ["-g", key, path])
-            let last = out.split { $0 == " " || $0 == "\n" }.last.map(String.init) ?? ""
-            return Int(last) ?? 0
-        }
-        let pw = dimension("pixelWidth")
-        let ph = dimension("pixelHeight")
+        let pw = pixelDimension(path, "pixelWidth")
+        let ph = pixelDimension(path, "pixelHeight")
         if pw == targetW && ph == targetH { return }
         if pw <= targetW && ph <= targetH {
             _ = shell("/usr/bin/sips", ["-p", "\(targetH)", "\(targetW)", path])   // pad, centered

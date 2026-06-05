@@ -19,6 +19,7 @@ DevScreenshot does it for you. Pick a target size, pick an app — it resizes th
 
 - 🎯 **Exact pixel output** — the four App Store presets, plus a custom `W×H`.
 - 🪟 **Pick any app** — live list of running apps in the menu; captures the front window.
+- 📱 **iOS / iPad simulator** — booted simulators captured at native App-Store resolution via `simctl` (needs neither Accessibility nor Screen Recording).
 - 📐 **Retina-aware** — computes the point size from the display's backing scale automatically.
 - ✂️ **No distortion** — pads or crops to the exact target only if an app enforces a minimum size.
 - 📁 **Configurable save location** — defaults to `~/Desktop/DevScreenshot`.
@@ -61,6 +62,22 @@ sips -p / -c                                            # pad or crop to the exa
 ```
 
 Because the window rect is captured directly (not the `-l` window mode), there's no drop shadow and no alpha channel — both of which App Store Connect rejects.
+
+## iOS / iPad simulator
+
+Booted simulators appear under **Capture iOS Simulator** in the menu. DevScreenshot grabs them with `xcrun simctl io <udid> screenshot`, which renders at the device's **native pixel resolution** — already exactly what App Store Connect wants, with no device bezel and no Accessibility/Screen-Recording permission.
+
+Boot the device whose resolution you need, then click it:
+
+| Device | Pixels |
+| --- | --- |
+| iPhone 11 Pro Max / Xs Max | 1242 × 2688 (6.5″) |
+| iPhone 12–14 Pro Max | 1284 × 2778 (6.7″) |
+| iPhone 15/16/17 Pro Max | 1290 × 2796 / 1320 × 2868 |
+| iPad Pro 12.9″ | 2048 × 2732 |
+| iPad Pro 13″ (M4) | 2064 × 2752 |
+
+The notification flags whether the captured size is a valid App Store dimension. Rotate the simulator (⌘→) first for landscape shots.
 
 ## Build from source
 
