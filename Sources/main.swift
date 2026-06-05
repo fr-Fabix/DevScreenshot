@@ -349,9 +349,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.writeObjects([img])
         }
-        notify("\(safe) — \(pw)×\(ph)\(valid ? " ✓ App Store" : " — not an App Store size")")
-        if revealInFinder {
-            NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+        if valid {
+            notify("\(safe) — \(pw)×\(ph) ✓ App Store")
+            if revealInFinder {
+                NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+            }
+        } else {
+            notify("\(safe) — \(pw)×\(ph)")
+            alert("\(pw)×\(ph) is not an App Store size",
+                  "App Store Connect accepts iPhone screenshots only from Pro Max / Plus devices "
+                  + "(6.9 or 6.5 inch) and iPad from 13 or 12.9 inch.\n\n"
+                  + "\u{201C}\(name)\u{201D} renders at \(pw)×\(ph). The file was saved anyway — "
+                  + "boot a Pro Max / Plus or iPad Pro simulator and capture again.")
         }
     }
 
