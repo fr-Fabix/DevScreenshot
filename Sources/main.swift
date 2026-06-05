@@ -15,6 +15,17 @@ let SIM_VALID_SIZES: Set<String> = [
     "2064x2752", "2752x2064",   // iPad 13"
 ]
 
+/// Optional fixed output sizes for simulator shots, to hit an exact App Store slot
+/// regardless of the booted device (aspect-fill scale + centre-crop, no distortion).
+let SIM_TARGETS: [(label: String, w: Int, h: Int)] = [
+    ("Native (no resize)",             0,    0),
+    ("iPhone 6.9\u{2033} — 1320×2868", 1320, 2868),
+    ("iPhone 6.7\u{2033} — 1284×2778", 1284, 2778),
+    ("iPhone 6.5\u{2033} — 1242×2688", 1242, 2688),
+    ("iPad 13\u{2033} — 2064×2752",    2064, 2752),
+    ("iPad 12.9\u{2033} — 2048×2732",  2048, 2732),
+]
+
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private var statusItem: NSStatusItem!
@@ -38,6 +49,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var playSound: Bool {
         defaults.object(forKey: "playSound") == nil ? true : defaults.bool(forKey: "playSound")
     }
+    private var simTargetW: Int { defaults.integer(forKey: "simTargetW") }   // 0 = native
+    private var simTargetH: Int { defaults.integer(forKey: "simTargetH") }
 
     // MARK: - Lifecycle
 
@@ -101,6 +114,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 it.representedObject = sim.udid
                 menu.addItem(it)
             }
+            let sizeItem = NSMenuItem(title: "Output size", action: nil, keyEquivalent: "")
+            let sizeMenu = NSMenu()
+            for (i, t) in SIM_TARGETS.enumerated() {
+                let si = action(t.label, #selector(pickSimTarget(_:)))
+                si.tag = i
+                si.state = (t.w == simTargetW && t.h == simTargetH) ? .on : .off
+                sizeMenu.addItem(si)
+            }
+            sizeItem.submenu = sizeMenu
+            menu.addItem(sizeItem)
         }
 
         menu.addItem(.separator())
@@ -191,6 +214,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func toggleReveal()    { defaults.set(!revealInFinder, forKey: "revealInFinder") }
     @objc private func toggleClipboard() { defaults.set(!copyToClipboard, forKey: "copyToClipboard") }
     @objc private func toggleSound()     { defaults.set(!playSound, forKey: "playSound") }
+    @objc private func pickSimTarget(_ sender: NSMenuItem) {
+        let t = SIM_TARGETS[sender.tag]
+        defaults.set(t.w, forKey: "simTargetW")
+        defaults.set(t.h, forKey: "simTargetH")
+    }
 
     @objc private func chooseLocation() {
         let panel = NSOpenPanel()
@@ -343,6 +371,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         stripAlpha(path)   // simulator PNGs carry an alpha channel that App Store Connect rejects
+        if simTargetW > 0, simTargetH > 0 { resizeToFill(path, simTargetW, simTargetH) }
         let pw = pixelDimension(path, "pixelWidth")
         let ph = pixelDimension(path, "pixelHeight")
         let valid = SIM_VALID_SIZES.contains("\(pw)x\(ph)")
@@ -364,6 +393,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                   + "\u{201C}\(name)\u{201D} renders at \(pw)×\(ph). The file was saved anyway — "
                   + "boot a Pro Max / Plus or iPad Pro simulator and capture again.")
         }
+    }
+
+    /// Scale (aspect-fill) + centre-crop to an exact pixel size, without distortion.
+    private func resizeToFill(_ path: String, _ tw: Int, _ th: Int) {
+        let sw = pixelDimension(path, "pixelWidth")
+        let sh = pixelDimension(path, "pixelHeight")
+        guard sw > 0, sh > 0, !(sw == tw && sh == th) else { return }
+        let scale = max(Double(tw) / Double(sw), Double(th) / Double(sh))
+        let rw = Int((Double(sw) * scale).rounded())
+        let rh = Int((Double(sh) * scale).rounded())
+        _ = shell("/usr/bin/sips", ["-z", "\(rh)", "\(rw)", path])   // proportional resample
+        _ = shell("/usr/bin/sips", ["-c", "\(th)", "\(tw)", path])   // centre-crop to target
     }
 
     // MARK: - Accessibility helpers
