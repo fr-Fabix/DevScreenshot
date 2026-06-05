@@ -1,6 +1,7 @@
 import Cocoa
 import ApplicationServices
 import ServiceManagement
+import ImageIO
 
 /// Pixel sizes accepted by App Store Connect for Mac apps — all 16:10.
 let PRESET_SIZES: [(w: Int, h: Int)] = [(2560, 1600), (2880, 1800), (1440, 900), (1280, 800)]
@@ -470,21 +471,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// App Store Connect rejects screenshots with an alpha channel — flatten to opaque RGB.
+    /// Uses CoreGraphics directly: NSBitmapImageRep drawing turns 16-bit/P3 simulator
+    /// PNGs into a black frame, so we redraw the CGImage into an opaque RGB context.
     private func stripAlpha(_ path: String) {
-        guard let data = FileManager.default.contents(atPath: path),
-              let rep = NSBitmapImageRep(data: data), rep.hasAlpha else { return }
-        let w = rep.pixelsWide, h = rep.pixelsHigh
-        guard let opaque = NSBitmapImageRep(
-            bitmapDataPlanes: nil, pixelsWide: w, pixelsHigh: h,
-            bitsPerSample: 8, samplesPerPixel: 3, hasAlpha: false, isPlanar: false,
-            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { return }
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: opaque)
-        rep.draw(in: NSRect(x: 0, y: 0, width: w, height: h))
-        NSGraphicsContext.restoreGraphicsState()
-        if let png = opaque.representation(using: .png, properties: [:]) {
-            try? png.write(to: URL(fileURLWithPath: path))
+        let url = URL(fileURLWithPath: path)
+        guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let cg = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return }
+        switch cg.alphaInfo {
+        case .none, .noneSkipFirst, .noneSkipLast: return   // already opaque
+        default: break
         }
+        let w = cg.width, h = cg.height
+        guard let ctx = CGContext(data: nil, width: w, height: h,
+                                  bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return }
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+        guard let out = ctx.makeImage(),
+              let dest = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil) else { return }
+        CGImageDestinationAddImage(dest, out, nil)
+        CGImageDestinationFinalize(dest)
     }
 
     @discardableResult
