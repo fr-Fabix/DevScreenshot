@@ -293,6 +293,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         ensureExactSize(path)
+        stripAlpha(path)
 
         if copyToClipboard, let img = NSImage(contentsOfFile: path) {
             NSPasteboard.general.clearContents()
@@ -341,6 +342,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
 
+        stripAlpha(path)   // simulator PNGs carry an alpha channel that App Store Connect rejects
         let pw = pixelDimension(path, "pixelWidth")
         let ph = pixelDimension(path, "pixelHeight")
         let valid = SIM_VALID_SIZES.contains("\(pw)x\(ph)")
@@ -423,6 +425,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             _ = shell("/usr/bin/sips", ["-p", "\(targetH)", "\(targetW)", path])   // pad, centered
         } else {
             _ = shell("/usr/bin/sips", ["-c", "\(targetH)", "\(targetW)", path])   // crop, centered
+        }
+    }
+
+    /// App Store Connect rejects screenshots with an alpha channel — flatten to opaque RGB.
+    private func stripAlpha(_ path: String) {
+        guard let data = FileManager.default.contents(atPath: path),
+              let rep = NSBitmapImageRep(data: data), rep.hasAlpha else { return }
+        let w = rep.pixelsWide, h = rep.pixelsHigh
+        guard let opaque = NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: w, pixelsHigh: h,
+            bitsPerSample: 8, samplesPerPixel: 3, hasAlpha: false, isPlanar: false,
+            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { return }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: opaque)
+        rep.draw(in: NSRect(x: 0, y: 0, width: w, height: h))
+        NSGraphicsContext.restoreGraphicsState()
+        if let png = opaque.representation(using: .png, properties: [:]) {
+            try? png.write(to: URL(fileURLWithPath: path))
         }
     }
 
