@@ -29,15 +29,11 @@ DevScreenshot does it for you. Pick a target size, pick an app — it resizes th
 
 ## Install
 
-```sh
-git clone https://github.com/fr-Fabix/DevScreenshot.git
-cd DevScreenshot
-./build.sh
-cp -R DevScreenshot.app ~/Applications/
-open ~/Applications/DevScreenshot.app
-```
+**Download** the notarized build from [Releases](https://github.com/fr-Fabix/DevScreenshot/releases), move `DevScreenshot.app` to `~/Applications`, and launch it.
 
-> Build it yourself — the app is ad-hoc signed locally, which keeps the macOS permission grants stable across relaunches. Run it from `~/Applications` (a stable path), not from a synced folder.
+Or **build from source** (see below).
+
+> Not on the Mac App Store — and it can't be. The sandbox required by the MAS makes `AXIsProcessTrusted()` always return `false`, so a sandboxed app can't resize other apps' windows. That's exactly why tools like CleanShot X and Shottr are distributed directly too. DevScreenshot ships via Developer ID + notarization instead.
 
 ## First run — permissions
 
@@ -66,13 +62,55 @@ sips -p / -c                                            # pad or crop to the exa
 
 Because the window rect is captured directly (not the `-l` window mode), there's no drop shadow and no alpha channel — both of which App Store Connect rejects.
 
-## Build
+## Build from source
+
+Requirements: **Xcode 15+** and [**XcodeGen**](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`).
 
 ```sh
-./build.sh        # generates the icon, compiles main.swift, bundles DevScreenshot.app
+git clone https://github.com/fr-Fabix/DevScreenshot.git
+cd DevScreenshot
+xcodegen generate          # creates DevScreenshot.xcodeproj from project.yml
+open DevScreenshot.xcodeproj
 ```
 
-No Xcode project required — just the Command Line Tools (`swiftc`, `iconutil`, `sips`). Edit the `PRESET_SIZES` line in [`main.swift`](main.swift) to change the presets, or [`make-icon.swift`](make-icon.swift) to restyle the icon.
+Build & run in Xcode (⌘R), or from the command line:
+
+```sh
+xcodebuild -scheme DevScreenshot -configuration Release \
+  -derivedDataPath build/dd build CODE_SIGN_IDENTITY="-"
+```
+
+To restyle the icon, edit [`Scripts/make-icon.swift`](Scripts/make-icon.swift), run `swift Scripts/make-icon.swift AppIcon.png`, and regenerate the sizes in `Resources/Assets.xcassets/AppIcon.appiconset`.
+
+## Release (Developer ID + notarization)
+
+One-time setup:
+
+1. Create a **Developer ID Application** certificate: Xcode → Settings → Accounts → *Manage Certificates* → **+** → *Developer ID Application*.
+2. Store notarization credentials in a keychain profile:
+   ```sh
+   xcrun notarytool store-credentials DevScreenshot-notary \
+     --apple-id "you@example.com" --team-id XF9U3N7W44 \
+     --password "xxxx-xxxx-xxxx-xxxx"     # app-specific password
+   ```
+
+Then cut a release:
+
+```sh
+./Scripts/release.sh        # archive → Developer ID sign → notarize → staple → build/DevScreenshot.zip
+```
+
+Attach `build/DevScreenshot.zip` to a GitHub Release.
+
+## Project layout
+
+```
+project.yml            XcodeGen spec (no .xcodeproj churn in diffs)
+Sources/main.swift     the whole app
+Resources/             Info.plist, entitlements (un-sandboxed), Assets.xcassets
+Scripts/make-icon.swift  icon generator
+Scripts/release.sh     notarized Developer ID build
+```
 
 ## Ideas / roadmap
 
@@ -81,7 +119,7 @@ No Xcode project required — just the Command Line Tools (`swiftc`, `iconutil`,
 - "Capture all sizes" in one click
 - Optional device frame / background canvas for marketing shots
 - Multi-display backing-scale handling
-- Notarized release + DMG
+- Sparkle auto-updates
 
 Contributions welcome.
 

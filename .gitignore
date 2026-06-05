@@ -6,3 +6,8 @@
 *.iconset/
 build/
 DerivedData/
+
+# Xcode — the .xcodeproj is generated from project.yml via XcodeGen
+*.xcodeproj/
+*.xcuserstate
+xcuserdata/

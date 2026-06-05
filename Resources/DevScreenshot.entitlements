@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+      Intentionally NOT sandboxed.
+
+      DevScreenshot uses the Accessibility API to resize other apps' windows and
+      the `screencapture` tool to grab them — both are forbidden inside the App
+      Sandbox (AXIsProcessTrusted() always returns false there). The app is
+      therefore distributed via Developer ID + notarization, not the Mac App Store.
+    -->
+</dict>
+</plist>
